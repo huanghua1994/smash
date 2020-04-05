@@ -435,15 +435,10 @@ end
 !                  The values are stored in order of (lsh,ksh,jsh,ish).)
 !
       implicit none
-      integer,intent(in) :: nprimijkl(4), nangijkl(4), nbfijkl(4), maxdim, mxprsh
       integer,parameter :: ncart(0:6)=(/1,3,6,10,15,21,28/), maxdim2=28, mxprsh2=30
-      integer :: ncartijkl(4)
+      integer,intent(in) :: nprimijkl(4), nangijkl(4), nbfijkl(4), maxdim, mxprsh
       real(8),intent(in) :: exijkl(mxprsh,4), coijkl(mxprsh,4), xyzijkl(3,4), threshex
       real(8),intent(out) :: twoeri(maxdim,maxdim,maxdim,maxdim)
-      real(8) :: eritmp(maxdim2*maxdim2*maxdim2*maxdim2)
-      real(8) :: ex12(3,mxprsh2*mxprsh2), ex34(3,mxprsh2*mxprsh2)
-      real(8) :: xyza(3,mxprsh2*mxprsh2), xyzb(3,mxprsh2*mxprsh2)
-      real(8) :: xyzaj(3,mxprsh2*mxprsh2), xyzbl(3,mxprsh2*mxprsh2)
 !
       if(mxprsh > mxprsh2) then
         write(*,'(" Error! Parameter mxprsh2 in int2rys is small!")')
@@ -453,30 +448,25 @@ end
         call exit
       endif
 !
-      ncartijkl(1)= ncart(nangijkl(1))
-      ncartijkl(2)= ncart(nangijkl(2))
-      ncartijkl(3)= ncart(nangijkl(3))
-      ncartijkl(4)= ncart(nangijkl(4))
-!
-      call int2rys2(twoeri,exijkl,coijkl,xyzijkl,nprimijkl,nangijkl,nbfijkl,maxdim, &
-&                   mxprsh,threshex,eritmp,ex12,ex34,xyza,xyzb,xyzaj,xyzbl,ncartijkl)
+      call int2rys2(twoeri,exijkl,coijkl,xyzijkl,nprimijkl,nangijkl,nbfijkl,maxdim,mxprsh,threshex)
       return
 end
 
 
 !------------------------------------------------------------------------------------------
-  subroutine int2rys2(twoeri,exijkl,coijkl,xyzijkl,nprimijkl,nangijkl,nbfijkl,maxdim, &
-&                     mxprsh,threshex,eritmp,ex12,ex34,xyza,xyzb,xyzaj,xyzbl,ncartijkl)
+  subroutine int2rys2(twoeri,exijkl,coijkl,xyzijkl,nprimijkl,nangijkl,nbfijkl,maxdim,mxprsh,threshex)
 !------------------------------------------------------------------------------------------
 !
 ! Calculate two-electron integrals using Rys quadrature
 !
       implicit none
       integer,intent(in) :: nprimijkl(4), nangijkl(4), nbfijkl(4), maxdim, mxprsh
-      integer,intent(in) :: ncartijkl(4)
+      integer :: ncartijkl(4)
       integer :: nroots, mmax, nmax
       integer :: i, j, k, l, nij, nkl, ij, kl, iprim, jprim, kprim, lprim, iroot
       integer :: ii, jj, kk, ll, ix, iy, iz, jx, jy, jz, kx, ky, kz, lx, ly, lz, icount, nn
+      integer,parameter :: ncart(0:6)=(/1,3,6,10,15,21,28/), maxdim2=28, mxprsh2=30,maxcount=64
+      integer :: icartxyz(maxdim2,3), jcartxyz(maxdim2,3), kcartxyz(maxdim2,3), lcartxyz(maxdim2,3)
       real(8),parameter :: zero=0.0D+00, half=0.5D+00, one=1.0D+00, two=2.0D+00
       real(8),parameter :: three=3.0D+00, four=4.0D+00, five=5.0D+00, six=6.0D+00
       real(8),parameter :: eight=8.0D+00, p9=9.0D+00, ten=10.0D+00, twelve=12.0D+00
@@ -517,16 +507,21 @@ end
       real(8),parameter :: faci6=0.57282196186948000D+00 ! sqrt(21)/8
       real(8),intent(in) :: exijkl(mxprsh,4), coijkl(mxprsh,4), xyzijkl(3,4), threshex
       real(8),intent(out) :: twoeri(maxdim,maxdim,maxdim,maxdim)
-      real(8),intent(out) :: eritmp(ncartijkl(4),ncartijkl(3),ncartijkl(2),ncartijkl(1))
-      real(8),intent(out) :: ex12(3,*), xyza(3,*), xyzaj(3,*)
-      real(8),intent(out) :: ex34(3,*), xyzb(3,*), xyzbl(3,*)
+      real(8) :: eritmp(maxdim2,maxdim2,maxdim2,maxdim2)
+      real(8) :: ex12(mxprsh2*mxprsh2,3),  ex34(mxprsh2*mxprsh2,3)
+      real(8) :: xyza(mxprsh2*mxprsh2,3),  xyzb(mxprsh2*mxprsh2,3)
+      real(8) :: xyzaj(mxprsh2*mxprsh2,3), xyzbl(mxprsh2*mxprsh2,3)
       real(8) :: xyzij(3), xyzkl(3), r12, r34, exi, exj, exk, exl, ci, cj, ck, cl
       real(8) :: xi, yi, zi, xk, yk, zk, exij, exji, exkl, exlk, r12ex, r34ex, dijkl
       real(8) :: ex21h, xyzab(3)
-      real(8) :: ex41, ex41h, ex43h, b10t, bp01t, cx, cy, cz, cpx, cpy, cpz, tval
+      real(8) :: ex41, ex41h, ex43h, b10t, bp01t, cx, cy, cz, cpx, cpy, cpz, tval, ex12ij1, ex12ij3
       real(8) :: trys(13), wrys(13), b00, b10, bp01, c00(3),cp00(3)
-      real(8) :: xyzint(3,0:12,0:6,0:12), rysint(3,8,0:6,0:6,0:12,0:6,13), work(28)
+      real(8) :: xyzint(0:12,0:6,0:12,3), rysint(maxcount,3,0:6,0:6,0:12,0:6), work(28)
 !
+      ncartijkl(1)= ncart(nangijkl(1))
+      ncartijkl(2)= ncart(nangijkl(2))
+      ncartijkl(3)= ncart(nangijkl(3))
+      ncartijkl(4)= ncart(nangijkl(4))
       nroots=(nangijkl(1)+nangijkl(2)+nangijkl(3)+nangijkl(4))/2+1
       mmax= nangijkl(1)+nangijkl(2)
       nmax= nangijkl(3)+nangijkl(4)
@@ -547,6 +542,47 @@ end
         enddo
       enddo
 !
+      ii = 0
+      do ix = nangijkl(1),0,-1
+        do iy = nangijkl(1)-ix,0,-1
+          iz = nangijkl(1)-ix-iy
+          ii = ii+1
+          icartxyz(ii,1) = ix
+          icartxyz(ii,2) = iy
+          icartxyz(ii,3) = iz
+        enddo
+      enddo
+      jj = 0
+      do jx = nangijkl(2),0,-1
+        do jy = nangijkl(2)-jx,0,-1
+          jz = nangijkl(2)-jx-jy
+          jj = jj+1
+          jcartxyz(jj,1) = jx
+          jcartxyz(jj,2) = jy
+          jcartxyz(jj,3) = jz
+        enddo
+      enddo
+      kk = 0
+      do kx = nangijkl(3),0,-1
+        do ky = nangijkl(3)-kx,0,-1
+          kz = nangijkl(3)-kx-ky
+          kk = kk+1
+          kcartxyz(kk,1) = kx
+          kcartxyz(kk,2) = ky
+          kcartxyz(kk,3) = kz
+        enddo
+      enddo
+      ll = 0
+      do lx = nangijkl(4),0,-1
+        do ly = nangijkl(4)-lx,0,-1
+          lz = nangijkl(4)-lx-ly
+          ll = ll+1
+          lcartxyz(ll,1) = lx
+          lcartxyz(ll,2) = ly
+          lcartxyz(ll,3) = lz
+        enddo
+      enddo
+!
       nkl= 0
       do kprim= 1,nprimijkl(3)
         exk= exijkl(kprim,3)
@@ -562,15 +598,15 @@ end
           r34ex=exk*exl*exlk*r34
           if(r34ex >= threshex)cycle
           nkl= nkl+1
-          ex34(1,nkl)= exkl
-          ex34(2,nkl)= exlk*half
-          ex34(3,nkl)= ck*cl*exp(-r34ex)*exlk
-          xyzb(1,nkl)=(xk+exl*xyzijkl(1,4))*exlk
-          xyzb(2,nkl)=(yk+exl*xyzijkl(2,4))*exlk
-          xyzb(3,nkl)=(zk+exl*xyzijkl(3,4))*exlk
-          xyzbl(1,nkl)= xyzb(1,nkl)-xyzijkl(1,4)
-          xyzbl(2,nkl)= xyzb(2,nkl)-xyzijkl(2,4)
-          xyzbl(3,nkl)= xyzb(3,nkl)-xyzijkl(3,4)
+          ex34(nkl,1)= exkl
+          ex34(nkl,2)= exlk*half
+          ex34(nkl,3)= ck*cl*exp(-r34ex)*exlk
+          xyzb(nkl,1)=(xk+exl*xyzijkl(1,4))*exlk
+          xyzb(nkl,2)=(yk+exl*xyzijkl(2,4))*exlk
+          xyzb(nkl,3)=(zk+exl*xyzijkl(3,4))*exlk
+          xyzbl(nkl,1)= xyzb(nkl,1)-xyzijkl(1,4)
+          xyzbl(nkl,2)= xyzb(nkl,2)-xyzijkl(2,4)
+          xyzbl(nkl,3)= xyzb(nkl,3)-xyzijkl(3,4)
         enddo
       enddo
 !
@@ -589,105 +625,107 @@ end
           r12ex=exi*exj*exji*r12
           if(r12ex >= threshex) cycle
           nij= nij+1
-          ex12(1,nij)= exij
-          ex12(2,nij)= exji*half
-          ex12(3,nij)= ci*cj*exp(-r12ex)*exji
-          xyza(1,nij)=(xi+exj*xyzijkl(1,2))*exji
-          xyza(2,nij)=(yi+exj*xyzijkl(2,2))*exji
-          xyza(3,nij)=(zi+exj*xyzijkl(3,2))*exji
-          xyzaj(1,nij)= xyza(1,nij)-xyzijkl(1,2)
-          xyzaj(2,nij)= xyza(2,nij)-xyzijkl(2,2)
-          xyzaj(3,nij)= xyza(3,nij)-xyzijkl(3,2)
+          ex12(nij,1)= exij
+          ex12(nij,2)= exji*half
+          ex12(nij,3)= ci*cj*exp(-r12ex)*exji
+          xyza(nij,1)=(xi+exj*xyzijkl(1,2))*exji
+          xyza(nij,2)=(yi+exj*xyzijkl(2,2))*exji
+          xyza(nij,3)=(zi+exj*xyzijkl(3,2))*exji
+          xyzaj(nij,1)= xyza(nij,1)-xyzijkl(1,2)
+          xyzaj(nij,2)= xyza(nij,2)-xyzijkl(2,2)
+          xyzaj(nij,3)= xyza(nij,3)-xyzijkl(3,2)
         enddo
       enddo
 !
-      icount= 0
+      icount = 0
       do ij= 1,nij
-        ex21h= ex12(2,ij)
+        ex21h= ex12(ij,2)
+        ex12ij1 = ex12(ij,1)
+        ex12ij3 = ex12(ij,3)
         do kl= 1,nkl
-          icount= icount+1
-          xyzab(1)= xyza(1,ij)-xyzb(1,kl)
-          xyzab(2)= xyza(2,ij)-xyzb(2,kl)
-          xyzab(3)= xyza(3,ij)-xyzb(3,kl)
-          ex41=one/(ex12(1,ij)+ex34(1,kl))
-          ex41h=half*ex41
-          ex43h=ex34(2,kl)
-          b10t= ex12(1,ij)*ex43h*ex41
-          bp01t=ex34(1,kl)*ex21h*ex41
-          cx = ex12(1,ij)*xyzab(1)*ex41
-          cy = ex12(1,ij)*xyzab(2)*ex41
-          cz = ex12(1,ij)*xyzab(3)*ex41
-          cpx= ex34(1,kl)*xyzab(1)*ex41
-          cpy= ex34(1,kl)*xyzab(2)*ex41
-          cpz= ex34(1,kl)*xyzab(3)*ex41
-          dijkl= ex12(3,ij)*ex34(3,kl)*sqrt(ex41)
-          tval=ex12(1,ij)*ex34(1,kl)*ex41*(xyzab(1)*xyzab(1)+xyzab(2)*xyzab(2)+xyzab(3)*xyzab(3))
+          xyzab(1) = xyza(ij,1)-xyzb(kl,1)
+          xyzab(2) = xyza(ij,2)-xyzb(kl,2)
+          xyzab(3) = xyza(ij,3)-xyzb(kl,3)
+          ex41  = one/(ex12ij1+ex34(kl,1))
+          ex41h = half*ex41
+          ex43h = ex34(kl,2)
+          b10t  = ex12ij1*ex43h*ex41
+          bp01t = ex34(kl,1)*ex21h*ex41
+          cx  = ex12ij1*xyzab(1)*ex41
+          cy  = ex12ij1*xyzab(2)*ex41
+          cz  = ex12ij1*xyzab(3)*ex41
+          cpx = ex34(kl,1)*xyzab(1)*ex41
+          cpy = ex34(kl,1)*xyzab(2)*ex41
+          cpz = ex34(kl,1)*xyzab(3)*ex41
+          dijkl = ex12ij3*ex34(kl,3)*sqrt(ex41)
+          tval  = ex12ij1*ex34(kl,1)*ex41*(xyzab(1)*xyzab(1)+xyzab(2)*xyzab(2)+xyzab(3)*xyzab(3))
 !
           call rysquad(tval,trys,wrys,nroots)
           do iroot= 1,nroots
-            b00 = ex41h*trys(iroot)
-            b10 = ex43h-b10t*trys(iroot)
-            bp01= ex21h-bp01t*trys(iroot)
-            c00(1)= xyzbl(1,kl)+cx*trys(iroot)
-            c00(2)= xyzbl(2,kl)+cy*trys(iroot)
-            c00(3)= xyzbl(3,kl)+cz*trys(iroot)
-            cp00(1) = xyzaj(1,ij)-cpx*trys(iroot)
-            cp00(2) = xyzaj(2,ij)-cpy*trys(iroot)
-            cp00(3) = xyzaj(3,ij)-cpz*trys(iroot)
+            icount = icount+1
+            b00  = ex41h*trys(iroot)
+            b10  = ex43h-b10t*trys(iroot)
+            bp01 = ex21h-bp01t*trys(iroot)
+            c00(1) = xyzbl(kl,1)+cx*trys(iroot)
+            c00(2) = xyzbl(kl,2)+cy*trys(iroot)
+            c00(3) = xyzbl(kl,3)+cz*trys(iroot)
+            cp00(1) = xyzaj(ij,1)-cpx*trys(iroot)
+            cp00(2) = xyzaj(ij,2)-cpy*trys(iroot)
+            cp00(3) = xyzaj(ij,3)-cpz*trys(iroot)
 ! I(0,0)
-            xyzint(1,0,0,0)= one
-            xyzint(2,0,0,0)= one
-            xyzint(3,0,0,0)= wrys(iroot)
+            xyzint(0,0,0,1)= one
+            xyzint(0,0,0,2)= one
+            xyzint(0,0,0,3)= wrys(iroot)
 !
             if(nmax >= 1) then
 ! I(1,0)
-              xyzint(1,1,0,0)= c00(1)
-              xyzint(2,1,0,0)= c00(2)
-              xyzint(3,1,0,0)= c00(3)*wrys(iroot)
+              xyzint(1,0,0,1)= c00(1)
+              xyzint(1,0,0,2)= c00(2)
+              xyzint(1,0,0,3)= c00(3)*wrys(iroot)
 ! I(n,0)
               do l= 2,nmax
-                 xyzint(1,l,0,0)=(l-1)*b10*xyzint(1,l-2,0,0)+c00(1)*xyzint(1,l-1,0,0)
-                 xyzint(2,l,0,0)=(l-1)*b10*xyzint(2,l-2,0,0)+c00(2)*xyzint(2,l-1,0,0)
-                 xyzint(3,l,0,0)=(l-1)*b10*xyzint(3,l-2,0,0)+c00(3)*xyzint(3,l-1,0,0)
+                 xyzint(l,0,0,1)=(l-1)*b10*xyzint(l-2,0,0,1)+c00(1)*xyzint(l-1,0,0,1)
+                 xyzint(l,0,0,2)=(l-1)*b10*xyzint(l-2,0,0,2)+c00(2)*xyzint(l-1,0,0,2)
+                 xyzint(l,0,0,3)=(l-1)*b10*xyzint(l-2,0,0,3)+c00(3)*xyzint(l-1,0,0,3)
               enddo
             endif
 !
             if(mmax >= 1) then
 ! I(0,1)
-              xyzint(1,0,0,1)= cp00(1)
-              xyzint(2,0,0,1)= cp00(2)
-              xyzint(3,0,0,1)= cp00(3)*wrys(iroot)
+              xyzint(0,0,1,1)= cp00(1)
+              xyzint(0,0,1,2)= cp00(2)
+              xyzint(0,0,1,3)= cp00(3)*wrys(iroot)
 ! I(0,m)
               do j= 2,mmax
-                xyzint(1,0,0,j)=(j-1)*bp01*xyzint(1,0,0,j-2)+cp00(1)*xyzint(1,0,0,j-1)
-                xyzint(2,0,0,j)=(j-1)*bp01*xyzint(2,0,0,j-2)+cp00(2)*xyzint(2,0,0,j-1)
-                xyzint(3,0,0,j)=(j-1)*bp01*xyzint(3,0,0,j-2)+cp00(3)*xyzint(3,0,0,j-1)
+                xyzint(0,0,j,1)=(j-1)*bp01*xyzint(0,0,j-2,1)+cp00(1)*xyzint(0,0,j-1,1)
+                xyzint(0,0,j,2)=(j-1)*bp01*xyzint(0,0,j-2,2)+cp00(2)*xyzint(0,0,j-1,2)
+                xyzint(0,0,j,3)=(j-1)*bp01*xyzint(0,0,j-2,3)+cp00(3)*xyzint(0,0,j-1,3)
               enddo
               if(nmax >= 1) then
 ! I(1,1)
-                xyzint(1,1,0,1)= b00+c00(1)*cp00(1)
-                xyzint(2,1,0,1)= b00+c00(2)*cp00(2)
-                xyzint(3,1,0,1)=(b00+c00(3)*cp00(3))*wrys(iroot)
+                xyzint(1,0,1,1)= b00+c00(1)*cp00(1)
+                xyzint(1,0,1,2)= b00+c00(2)*cp00(2)
+                xyzint(1,0,1,3)=(b00+c00(3)*cp00(3))*wrys(iroot)
 ! I(1,m)
                 do j= 2,mmax
-                  xyzint(1,1,0,j)=(j-1)*bp01*xyzint(1,1,0,j-2)+b00*xyzint(1,0,0,j-1) &
-&                                   +cp00(1)*xyzint(1,1,0,j-1)
-                  xyzint(2,1,0,j)=(j-1)*bp01*xyzint(2,1,0,j-2)+b00*xyzint(2,0,0,j-1) &
-&                                   +cp00(2)*xyzint(2,1,0,j-1)
-                  xyzint(3,1,0,j)=(j-1)*bp01*xyzint(3,1,0,j-2)+b00*xyzint(3,0,0,j-1) &
-&                                   +cp00(3)*xyzint(3,1,0,j-1)
+                  xyzint(1,0,j,1)=(j-1)*bp01*xyzint(1,0,j-2,1)+b00*xyzint(0,0,j-1,1) &
+&                                   +cp00(1)*xyzint(1,0,j-1,1)
+                  xyzint(1,0,j,2)=(j-1)*bp01*xyzint(1,0,j-2,2)+b00*xyzint(0,0,j-1,2) &
+&                                   +cp00(2)*xyzint(1,0,j-1,2)
+                  xyzint(1,0,j,3)=(j-1)*bp01*xyzint(1,0,j-2,3)+b00*xyzint(0,0,j-1,3) &
+&                                   +cp00(3)*xyzint(1,0,j-1,3)
                 enddo
               endif
-            endif
+            endif    ! End of "if(mmax >= 1) then"
 ! I(n,m)
             do j= 1,mmax
               do l= 2,nmax
-                xyzint(1,l,0,j)=(l-1)*b10*xyzint(1,l-2,0,j)+j*b00*xyzint(1,l-1,0,j-1) &
-&                                 +c00(1)*xyzint(1,l-1,0,j)
-                xyzint(2,l,0,j)=(l-1)*b10*xyzint(2,l-2,0,j)+j*b00*xyzint(2,l-1,0,j-1) &
-&                                 +c00(2)*xyzint(2,l-1,0,j)
-                xyzint(3,l,0,j)=(l-1)*b10*xyzint(3,l-2,0,j)+j*b00*xyzint(3,l-1,0,j-1) &
-&                                 +c00(3)*xyzint(3,l-1,0,j)
+                xyzint(l,0,j,1)=(l-1)*b10*xyzint(l-2,0,j,1)+j*b00*xyzint(l-1,0,j-1,1) &
+&                                 +c00(1)*xyzint(l-1,0,j,1)
+                xyzint(l,0,j,2)=(l-1)*b10*xyzint(l-2,0,j,2)+j*b00*xyzint(l-1,0,j-1,2) &
+&                                 +c00(2)*xyzint(l-1,0,j,2)
+                xyzint(l,0,j,3)=(l-1)*b10*xyzint(l-2,0,j,3)+j*b00*xyzint(l-1,0,j-1,3) &
+&                                 +c00(3)*xyzint(l-1,0,j,3)
               enddo
             enddo
 !
@@ -695,9 +733,9 @@ end
             do j= 0,mmax
               do k=1,nangijkl(3)
                 do l=0,nmax-k
-                  xyzint(1,l,k,j)= xyzint(1,l+1,k-1,j)-xyzkl(1)*xyzint(1,l,k-1,j)
-                  xyzint(2,l,k,j)= xyzint(2,l+1,k-1,j)-xyzkl(2)*xyzint(2,l,k-1,j)
-                  xyzint(3,l,k,j)= xyzint(3,l+1,k-1,j)-xyzkl(3)*xyzint(3,l,k-1,j)
+                  xyzint(l,k,j,1)= xyzint(l+1,k-1,j,1)-xyzkl(1)*xyzint(l,k-1,j,1)
+                  xyzint(l,k,j,2)= xyzint(l+1,k-1,j,2)-xyzkl(2)*xyzint(l,k-1,j,2)
+                  xyzint(l,k,j,3)= xyzint(l+1,k-1,j,3)-xyzkl(3)*xyzint(l,k-1,j,3)
                 enddo
               enddo
             enddo
@@ -706,9 +744,9 @@ end
             do j= 0,mmax
               do k=0,nangijkl(3)
                 do l=0,nangijkl(4)
-                  rysint(1,icount,l,k,j,0,iroot)= xyzint(1,l,k,j)*dijkl
-                  rysint(2,icount,l,k,j,0,iroot)= xyzint(2,l,k,j)
-                  rysint(3,icount,l,k,j,0,iroot)= xyzint(3,l,k,j)
+                  rysint(icount,1,l,k,j,0)= xyzint(l,k,j,1)*dijkl
+                  rysint(icount,2,l,k,j,0)= xyzint(l,k,j,2)
+                  rysint(icount,3,l,k,j,0)= xyzint(l,k,j,3)
                 enddo
               enddo
             enddo
@@ -716,93 +754,73 @@ end
               do j= 0,mmax-i
                 do k=0,nangijkl(3)
                   do l=0,nangijkl(4)
-                    rysint(1,icount,l,k,j,i,iroot)= rysint(1,icount,l,k,j+1,i-1,iroot) &
-&                                                  -rysint(1,icount,l,k,j  ,i-1,iroot)*xyzij(1)
-                    rysint(2,icount,l,k,j,i,iroot)= rysint(2,icount,l,k,j+1,i-1,iroot) &
-&                                                  -rysint(2,icount,l,k,j  ,i-1,iroot)*xyzij(2) 
-                    rysint(3,icount,l,k,j,i,iroot)= rysint(3,icount,l,k,j+1,i-1,iroot) &
-&                                                  -rysint(3,icount,l,k,j  ,i-1,iroot)*xyzij(3) 
+                    rysint(icount,1,l,k,j,i)= rysint(icount,1,l,k,j+1,i-1) &
+&                                            -rysint(icount,1,l,k,j  ,i-1)*xyzij(1)
+                    rysint(icount,2,l,k,j,i)= rysint(icount,2,l,k,j+1,i-1) &
+&                                            -rysint(icount,2,l,k,j  ,i-1)*xyzij(2) 
+                    rysint(icount,3,l,k,j,i)= rysint(icount,3,l,k,j+1,i-1) &
+&                                            -rysint(icount,3,l,k,j  ,i-1)*xyzij(3) 
                   enddo
                 enddo
               enddo
-            enddo
-          enddo
+            enddo    ! End of "do i= 1,nangijkl(1)"
 !
-          if(icount == 8) then
-            ii= 0
-            do ix= nangijkl(1),0,-1
-              do iy= nangijkl(1)-ix,0,-1
-                iz= nangijkl(1)-ix-iy
-                ii= ii+1
-                jj= 0
-                do jx= nangijkl(2),0,-1
-                  do jy= nangijkl(2)-jx,0,-1
-                    jz= nangijkl(2)-jx-jy
-                    jj= jj+1
-                    kk= 0
-                    do kx= nangijkl(3),0,-1
-                      do ky= nangijkl(3)-kx,0,-1
-                        kz= nangijkl(3)-kx-ky
-                        kk= kk+1
-                        ll= 0
-                        do lx= nangijkl(4),0,-1
-                          do ly= nangijkl(4)-lx,0,-1
-                            lz= nangijkl(4)-lx-ly
-                            ll= ll+1
-                            do iroot= 1,nroots
-                              do nn= 1,8
-                                eritmp(ll,kk,jj,ii)= eritmp(ll,kk,jj,ii) &
-&                                                  +(rysint(1,nn,lx,kx,jx,ix,iroot) &
-&                                                   *rysint(2,nn,ly,ky,jy,iy,iroot) &
-&                                                   *rysint(3,nn,lz,kz,jz,iz,iroot))
-                              enddo
-                            enddo
-                          enddo
-                        enddo
+            if (icount == maxcount) then
+              do ii = 1, ncartijkl(1)
+                ix = icartxyz(ii,1)
+                iy = icartxyz(ii,2)
+                iz = icartxyz(ii,3)
+                do jj = 1, ncartijkl(2)
+                  jx = jcartxyz(jj,1)
+                  jy = jcartxyz(jj,2)
+                  jz = jcartxyz(jj,3)
+                  do kk = 1, ncartijkl(3)
+                    kx = kcartxyz(kk,1)
+                    ky = kcartxyz(kk,2)
+                    kz = kcartxyz(kk,3)
+                    do ll = 1, ncartijkl(4)
+                      lx = lcartxyz(ll,1)
+                      ly = lcartxyz(ll,2)
+                      lz = lcartxyz(ll,3)
+                      do nn = 1, maxcount
+                        eritmp(ll,kk,jj,ii) = eritmp(ll,kk,jj,ii) &
+&                                           +(rysint(nn,1,lx,kx,jx,ix) &
+&                                            *rysint(nn,2,ly,ky,jy,iy) &
+&                                            *rysint(nn,3,lz,kz,jz,iz))
                       enddo
                     enddo
                   enddo
                 enddo
               enddo
-            enddo
-            icount= 0
-          endif
+              icount = 0
+            endif    ! End of "if (icount == maxcount) then"
+          enddo    ! End of "do iroot= 1,nroots"
 !
-        enddo
-      enddo
+        enddo    ! End of "do kl= 1,nkl"
+      enddo    ! End of "do ij= 1,nij"
 !
-      if(icount /= 0) then
-        ii= 0
-        do ix= nangijkl(1),0,-1
-          do iy= nangijkl(1)-ix,0,-1
-            iz= nangijkl(1)-ix-iy
-            ii= ii+1
-            jj= 0
-            do jx= nangijkl(2),0,-1
-              do jy= nangijkl(2)-jx,0,-1
-                jz= nangijkl(2)-jx-jy
-                jj= jj+1
-                kk= 0
-                do kx= nangijkl(3),0,-1
-                  do ky= nangijkl(3)-kx,0,-1
-                    kz= nangijkl(3)-kx-ky
-                    kk= kk+1
-                    ll= 0
-                    do lx= nangijkl(4),0,-1
-                      do ly= nangijkl(4)-lx,0,-1
-                        lz= nangijkl(4)-lx-ly
-                        ll= ll+1
-                        do iroot= 1,nroots
-                          do nn= 1,icount
-                            eritmp(ll,kk,jj,ii)= eritmp(ll,kk,jj,ii) &
-&                                              +(rysint(1,nn,lx,kx,jx,ix,iroot) &
-&                                               *rysint(2,nn,ly,ky,jy,iy,iroot) &
-&                                               *rysint(3,nn,lz,kz,jz,iz,iroot))
-                          enddo
-                        enddo
-                      enddo
-                    enddo
-                  enddo
+      if (icount /= 0) then
+        do ii = 1, ncartijkl(1)
+          ix = icartxyz(ii,1)
+          iy = icartxyz(ii,2)
+          iz = icartxyz(ii,3)
+          do jj = 1, ncartijkl(2)
+            jx = jcartxyz(jj,1)
+            jy = jcartxyz(jj,2)
+            jz = jcartxyz(jj,3)
+            do kk = 1, ncartijkl(3)
+              kx = kcartxyz(kk,1)
+              ky = kcartxyz(kk,2)
+              kz = kcartxyz(kk,3)
+              do ll = 1, ncartijkl(4)
+                lx = lcartxyz(ll,1)
+                ly = lcartxyz(ll,2)
+                lz = lcartxyz(ll,3)
+                do nn = 1, icount
+                  eritmp(ll,kk,jj,ii) = eritmp(ll,kk,jj,ii) &
+&                                     +(rysint(nn,1,lx,kx,jx,ix) &
+&                                      *rysint(nn,2,ly,ky,jy,iy) &
+&                                      *rysint(nn,3,lz,kz,jz,iz))
                 enddo
               enddo
             enddo
